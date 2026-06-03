@@ -114,35 +114,34 @@ jobs:
             echo "  FlowLog · Deploy iniciado"
             echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
             echo "═══════════════════════════════════════"
-
+      
             # Instala Docker se não existir
             if ! command -v docker &> /dev/null; then
               echo "📦 Instalando Docker..."
               sudo apt-get update -qq
               sudo apt-get install -y docker.io
               sudo systemctl enable --now docker
-              sudo usermod -aG docker $USER
             fi
-
-            # Para e remove o container anterior (se existir)
+      
+            # Para e remove container anterior
             echo "🛑 Parando container anterior..."
-            docker stop flowlog-app 2>/dev/null || true
-            docker rm   flowlog-app 2>/dev/null || true
-
-            # Baixa a imagem mais recente
+            sudo docker stop flowlog-app 2>/dev/null || true
+            sudo docker rm   flowlog-app 2>/dev/null || true
+      
+            # Baixa imagem mais recente
             echo "⬇️  Baixando nova imagem..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
-
-            # Inicia o novo container
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
+      
+            # Inicia novo container
             echo "▶️  Iniciando container..."
-            docker run -d \
+            sudo docker run -d \
               --name flowlog-app \
               --restart always \
               -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
-
+      
             echo "✅ Container iniciado com sucesso!"
-            docker ps --filter name=flowlog-app --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            sudo docker ps --filter name=flowlog-app --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           REMOTE
 
   # ════════════════════════════════════════════
