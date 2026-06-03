@@ -1,24 +1,15 @@
-# ──────────────────────────────────────────────
-#  FlowLog · One-Page  |  LAB11 UniSenai
-#  Aluno : Lucas Nascimento Lopes  RA 25171226
-#  Case  : 4 – Logística & E-commerce
-# ──────────────────────────────────────────────
 
-# Imagem base: Nginx Alpine (leve e segura)
 FROM nginx:1.27-alpine
 
-# Metadados da imagem
+
 LABEL maintainer="Lucas Nascimento Lopes <lucas@flowlog.com.br>" \
       version="1.0.0" \
       description="FlowLog One-Page – Case 4 Logistica E-commerce"
 
-# Remove configuração padrão do Nginx e copia a customizada
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copia a one-page para o diretório raiz do Nginx
 COPY index.html /usr/share/nginx/html/index.html
 
-# Configuração customizada do Nginx (porta 80, gzip, cache)
 RUN printf 'server {\n\
     listen 80;\n\
     server_name _;\n\
@@ -41,8 +32,6 @@ RUN printf 'server {\n\
     }\n\
 }\n' > /etc/nginx/conf.d/default.conf
 
-# Expõe a porta HTTP
 EXPOSE 80
 
-# Comando de inicialização
 CMD ["nginx", "-g", "daemon off;"]
