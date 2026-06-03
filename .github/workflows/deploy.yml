@@ -1,32 +1,3 @@
-# ──────────────────────────────────────────────────────────────────────
-#  .github/workflows/deploy.yml
-#  FlowLog · Pipeline CI/CD  |  LAB11 UniSenai
-#  Aluno : Lucas Nascimento Lopes  RA 25171226
-#  Case  : 4 – Logística & E-commerce
-# ──────────────────────────────────────────────────────────────────────
-#
-#  FLUXO DE BRANCHES:
-#
-#  feature/* ──▶ develop ──▶ (PR + review) ──▶ main
-#                  │                              │
-#                  ▼                              ▼
-#           [HOMOLOGAÇÃO]                   [PRODUÇÃO]
-#            EC2 Staging                    EC2 Prod
-#
-#  REGRAS:
-#  • Push em develop  → build + deploy em HOMOLOGAÇÃO
-#  • PR develop→main  → build + lint (validação obrigatória antes do merge)
-#  • Push em main     → build + docker + deploy em PRODUÇÃO + health check
-#  • Push em feature  → só build & lint (sem deploy)
-#
-#  SECRETS NECESSÁRIOS:
-#    DOCKER_USERNAME         – usuário Docker Hub
-#    DOCKER_PASSWORD         – senha/token Docker Hub
-#    AWS_EC2_SSH_KEY         – chave .pem (conteúdo bruto)
-#    AWS_EC2_USER            – ubuntu ou ec2-user
-#    AWS_EC2_HOST_PROD       – IP público da EC2 de PRODUÇÃO
-#    AWS_EC2_HOST_HOMOLOG    – IP público da EC2 de HOMOLOGAÇÃO
-# ──────────────────────────────────────────────────────────────────────
 
 name:  CI/CD · FlowLog
 
@@ -126,7 +97,6 @@ jobs:
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment:
       name: homologacao
-      url: http://${{ secrets.AWS_EC2_HOST }}
 
     steps:
       - name:  Configurar SSH
@@ -190,7 +160,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: producao
-      url: http://${{ secrets.AWS_EC2_HOST}}
 
     steps:
       - name:  Configurar SSH
