@@ -1,13 +1,13 @@
 
-name: 🚀 CI/CD · FlowLog Deploy
+name:  CI/CD · FlowLog Deploy
 
 on:
   push:
     branches:
-      - main          # Dispara em qualquer push na branch principal
+      - main         
   pull_request:
     branches:
-      - main          # Valida PRs antes do merge
+      - main          
 
 env:
   IMAGE_NAME: flowlog-onepage
@@ -15,62 +15,56 @@ env:
   DOCKER_REGISTRY: docker.io
 
 jobs:
-  # ════════════════════════════════════════════
-  #  JOB 1 – BUILD & LINT
-  # ════════════════════════════════════════════
   build:
     name: 🔨 Build & Lint
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout do repositório
+      - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: 🔍 Validar HTML (lint)
+      - name: Validar HTML (lint)
         run: |
           echo "── Verificando estrutura do HTML ──"
           if grep -q '<!DOCTYPE html>' index.html; then
-            echo "✅ DOCTYPE encontrado"
+            echo "DOCTYPE encontrado"
           else
-            echo "❌ DOCTYPE ausente" && exit 1
+            echo "DOCTYPE ausente" && exit 1
           fi
           if grep -q '<title>' index.html; then
-            echo "✅ Tag <title> encontrada"
+            echo "Tag <title> encontrada"
           else
-            echo "❌ Tag <title> ausente" && exit 1
+            echo "Tag <title> ausente" && exit 1
           fi
-          echo "✅ Lint HTML concluído com sucesso"
+          echo "Lint HTML concluído com sucesso"
 
-      - name: 📋 Exibir informações do commit
+      - name: Exibir informações do commit
         run: |
-          echo "🔖 Commit  : ${{ github.sha }}"
-          echo "👤 Autor   : ${{ github.actor }}"
-          echo "🌿 Branch  : ${{ github.ref_name }}"
-          echo "💬 Mensagem: ${{ github.event.head_commit.message }}"
+          echo "Commit  : ${{ github.sha }}"
+          echo "Autor   : ${{ github.actor }}"
+          echo "Branch  : ${{ github.ref_name }}"
+          echo "Mensagem: ${{ github.event.head_commit.message }}"
 
-  # ════════════════════════════════════════════
-  #  JOB 2 – DOCKER BUILD & PUSH
-  # ════════════════════════════════════════════
   docker:
     name: 🐳 Docker Build & Push
     runs-on: ubuntu-latest
-    needs: build          # Só executa se o build passar
-    if: github.ref == 'refs/heads/main'   # Apenas em push para main
+    needs: build          
+    if: github.ref == 'refs/heads/main'   
 
     steps:
-      - name: 📥 Checkout do repositório
+      - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: 🔐 Login no Docker Hub
+      - name: Login no Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: 🏗️ Configurar Docker Buildx
+      - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Build e Push da imagem Docker
+      - name: Build e Push da imagem Docker
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -82,73 +76,51 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 📊 Inspecionar imagem gerada
+      - name: Inspecionar imagem gerada
         run: |
           docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           docker image inspect ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --format '🐳 Tamanho: {{.Size}} bytes | Criada: {{.Created}}'
+            --format 'Tamanho: {{.Size}} bytes | Criada: {{.Created}}'
 
-  # ════════════════════════════════════════════
-  #  JOB 3 – DEPLOY NA EC2
-  # ════════════════════════════════════════════
   deploy:
-    name: 🚀 Deploy EC2
+    name: Deploy EC2
     runs-on: ubuntu-latest
-    needs: docker           # Só executa após o Docker Push
+    needs: docker           
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: 🔑 Configurar chave SSH
+      - name: Configurar chave SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
           chmod 600 ~/.ssh/ec2_key.pem
           ssh-keyscan -H ${{ secrets.AWS_EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: 🚀 Deploy via SSH na instância EC2
+      - name: Deploy via SSH na instância EC2
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
               ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'REMOTE'
-            echo "═══════════════════════════════════════"
-            echo "  FlowLog · Deploy iniciado"
-            echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
-            echo "═══════════════════════════════════════"
       
-            # Instala Docker se não existir
-            if ! command -v docker &> /dev/null; then
-              echo "📦 Instalando Docker..."
-              sudo apt-get update -qq
-              sudo apt-get install -y docker.io
-              sudo systemctl enable --now docker
-            fi
-      
-            # Para e remove container anterior
-            echo "🛑 Parando container anterior..."
             sudo docker stop flowlog-app 2>/dev/null || true
             sudo docker rm   flowlog-app 2>/dev/null || true
       
-            # Baixa imagem mais recente
-            echo "⬇️  Baixando nova imagem..."
+            echo " Baixando nova imagem..."
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
-      
-            # Inicia novo container
-            echo "▶️  Iniciando container..."
+         
+            echo "Iniciando container..."
             sudo docker run -d \
               --name flowlog-app \
               --restart always \
               -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
       
-            echo "✅ Container iniciado com sucesso!"
+            echo "Container iniciado com sucesso!"
             sudo docker ps --filter name=flowlog-app --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           REMOTE
 
-  # ════════════════════════════════════════════
-  #  JOB 4 – HEALTH CHECK
-  # ════════════════════════════════════════════
   health-check:
-    name: 🔍 Health Check
+    name: Health Check
     runs-on: ubuntu-latest
     needs: deploy
     if: github.ref == 'refs/heads/main'
@@ -157,7 +129,7 @@ jobs:
       - name: ⏳ Aguardar serviço inicializar
         run: sleep 15
 
-      - name: 🌐 Verificar one-page no ar (HTTP 200)
+      - name: Verificar one-page no ar (HTTP 200)
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             http://${{ secrets.AWS_EC2_HOST }}/ \
@@ -165,31 +137,22 @@ jobs:
             --retry 5 \
             --retry-delay 5)
 
-          echo "🔎 Status HTTP recebido: $STATUS"
+          echo "Status HTTP recebido: $STATUS"
 
           if [ "$STATUS" -eq 200 ]; then
-            echo "✅ One-page FlowLog está NO AR! Status: $STATUS"
+            echo "One-page FlowLog está NO AR! Status: $STATUS"
           else
-            echo "❌ Falha no health-check. Status: $STATUS"
+            echo "Falha no health-check. Status: $STATUS"
             exit 1
           fi
 
-      - name: 🏥 Verificar endpoint /health
+      - name: Verificar endpoint /health
         run: |
           RESPONSE=$(curl -s http://${{ secrets.AWS_EC2_HOST }}/health --max-time 10)
           echo "📋 Resposta do /health: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"status":"ok"'; then
-            echo "✅ Health endpoint OK!"
+            echo "Health endpoint OK!"
           else
-            echo "⚠️  Health endpoint retornou resposta inesperada"
+            echo " Health endpoint retornou resposta inesperada"
           fi
 
-      - name: 📢 Notificação de deploy concluído
-        run: |
-          echo "═══════════════════════════════════════════════════"
-          echo "  ✅  DEPLOY CONCLUÍDO COM SUCESSO"
-          echo "  🌐  URL  : http://${{ secrets.AWS_EC2_HOST }}"
-          echo "  🔖  SHA  : ${{ github.sha }}"
-          echo "  👤  Por  : ${{ github.actor }}"
-          echo "  📅  Data : $(date '+%d/%m/%Y %H:%M:%S UTC')"
-          echo "═══════════════════════════════════════════════════"
