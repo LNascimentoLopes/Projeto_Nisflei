@@ -1,13 +1,46 @@
+# ──────────────────────────────────────────────────────────────────────
+#  .github/workflows/deploy.yml
+#  FlowLog · Pipeline CI/CD  |  LAB11 UniSenai
+#  Aluno : Lucas Nascimento Lopes  RA 25171226
+#  Case  : 4 – Logística & E-commerce
+# ──────────────────────────────────────────────────────────────────────
+#
+#  FLUXO DE BRANCHES:
+#
+#  feature/* ──▶ develop ──▶ (PR + review) ──▶ main
+#                  │                              │
+#                  ▼                              ▼
+#           [HOMOLOGAÇÃO]                   [PRODUÇÃO]
+#            EC2 Staging                    EC2 Prod
+#
+#  REGRAS:
+#  • Push em develop  → build + deploy em HOMOLOGAÇÃO
+#  • PR develop→main  → build + lint (validação obrigatória antes do merge)
+#  • Push em main     → build + docker + deploy em PRODUÇÃO + health check
+#  • Push em feature  → só build & lint (sem deploy)
+#
+#  SECRETS NECESSÁRIOS:
+#    DOCKER_USERNAME         – usuário Docker Hub
+#    DOCKER_PASSWORD         – senha/token Docker Hub
+#    AWS_EC2_SSH_KEY         – chave .pem (conteúdo bruto)
+#    AWS_EC2_USER            – ubuntu ou ec2-user
+#    AWS_EC2_HOST_PROD       – IP público da EC2 de PRODUÇÃO
+#    AWS_EC2_HOST_HOMOLOG    – IP público da EC2 de HOMOLOGAÇÃO
+# ──────────────────────────────────────────────────────────────────────
 
-name:  CI/CD · FlowLog Deploy
+name:  CI/CD · FlowLog
 
 on:
   push:
     branches:
-      - main         
+      - main        
+      - develop    
+      - 'feature/*'
+
   pull_request:
     branches:
-      - main          
+      - main        
+      - develop     
 
 env:
   IMAGE_NAME: flowlog-onepage
@@ -15,144 +48,200 @@ env:
   DOCKER_REGISTRY: docker.io
 
 jobs:
+
   build:
-    name: 🔨 Build & Lint
+    name: Build & Lint
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout do repositório
+      - name:  Checkout
         uses: actions/checkout@v4
 
-      - name: Validar HTML (lint)
+      - name:  Lint HTML
         run: |
           echo "── Verificando estrutura do HTML ──"
           if grep -q '<!DOCTYPE html>' index.html; then
             echo "DOCTYPE encontrado"
           else
-            echo "DOCTYPE ausente" && exit 1
+            echo " DOCTYPE ausente" && exit 1
           fi
           if grep -q '<title>' index.html; then
             echo "Tag <title> encontrada"
           else
             echo "Tag <title> ausente" && exit 1
           fi
-          echo "Lint HTML concluído com sucesso"
+          echo "Lint concluído com sucesso"
 
-      - name: Exibir informações do commit
+      - name: Info do commit
         run: |
-          echo "Commit  : ${{ github.sha }}"
-          echo "Autor   : ${{ github.actor }}"
-          echo "Branch  : ${{ github.ref_name }}"
-          echo "Mensagem: ${{ github.event.head_commit.message }}"
+          echo " Commit  : ${{ github.sha }}"
+          echo " Autor   : ${{ github.actor }}"
+          echo " Branch  : ${{ github.ref_name }}"
+          echo " Mensagem: ${{ github.event.head_commit.message }}"
 
   docker:
-    name: Docker Build & Push
+    name:  Docker Build & Push
     runs-on: ubuntu-latest
-    needs: build          
-    if: github.ref == 'refs/heads/main'   
+    needs: build
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 
     steps:
-      - name: Checkout do repositório
+      - name:  Checkout
         uses: actions/checkout@v4
 
-      - name: Login no Docker Hub
+      - name:  Login Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Configurar Docker Buildx
+      - name:  Configurar Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build e Push da imagem Docker
+      - name: Build & Push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.ref_name == 'main' && 'latest' || 'homolog' }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Inspecionar imagem gerada
+      - name:  Inspecionar imagem
         run: |
-          docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          docker image inspect ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --format 'Tamanho: {{.Size}} bytes | Criada: {{.Created}}'
+          TAG=${{ github.ref_name == 'main' && 'latest' || 'homolog' }}
+          docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:$TAG
+          docker image inspect ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:$TAG \
+            --format ' Tamanho: {{.Size}} bytes | Criada: {{.Created}}'
 
-  deploy:
-    name: Deploy EC2
+  deploy-homolog:
+    name: Deploy · Homologação
     runs-on: ubuntu-latest
-    needs: docker           
-    if: github.ref == 'refs/heads/main'
+    needs: docker
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: homologacao
+      url: http://${{ secrets.AWS_EC2_HOST }}
 
     steps:
-      - name: Configurar chave SSH
+      - name:  Configurar SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
           chmod 600 ~/.ssh/ec2_key.pem
-          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST_HOMOLOG }} >> ~/.ssh/known_hosts
 
-      - name: Deploy via SSH na instância EC2
+      - name:  Deploy na EC2 Homologação
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
-              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'REMOTE'
-      
+              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST_HOMOLOG }} << 'REMOTE'
+            echo "═══════════════════════════════════════"
+            echo "  FlowLog · Deploy HOMOLOGAÇÃO"
+            echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
+            echo "═══════════════════════════════════════"
+
+            # Remove Nginx do sistema se existir
+            sudo apt-get remove -y nginx nginx-common 2>/dev/null || true
+            sudo apt-get autoremove -y 2>/dev/null || true
+
+            # Instala Docker se não existir
+            if ! command -v docker &> /dev/null; then
+              sudo apt-get update -qq
+              sudo apt-get install -y docker.io
+              sudo systemctl enable --now docker
+            fi
+
             sudo docker stop flowlog-app 2>/dev/null || true
             sudo docker rm   flowlog-app 2>/dev/null || true
-      
-            echo " Baixando nova imagem..."
+
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:homolog
+
+            sudo docker run -d \
+              --name flowlog-app \
+              --restart always \
+              -p 80:80 \
+              ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:homolog
+
+            echo " Homologação no ar!"
+            sudo docker ps --filter name=flowlog-app \
+              --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          REMOTE
+
+      - name:  Health Check Homologação
+        run: |
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://${{ secrets.AWS_EC2_HOST_HOMOLOG }}/ \
+            --max-time 30 --retry 3 --retry-delay 5)
+          echo "🔎 Status: $STATUS"
+          [ "$STATUS" -eq 200 ] && echo " Homologação OK!" || (echo " Falha!" && exit 1)
+
+
+  deploy-prod:
+    name:  Deploy · Produção
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: producao
+      url: http://${{ secrets.AWS_EC2_HOST}}
+
+    steps:
+      - name:  Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST_PROD }} >> ~/.ssh/known_hosts
+
+      - name:  Deploy na EC2 Produção
+        run: |
+          ssh -i ~/.ssh/ec2_key.pem \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST_PROD }} << 'REMOTE'
+            echo "═══════════════════════════════════════"
+            echo "  FlowLog · Deploy PRODUÇÃO"
+            echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
+            echo "═══════════════════════════════════════"
+
+            # Remove Nginx do sistema se existir
+            sudo apt-get remove -y nginx nginx-common 2>/dev/null || true
+            sudo apt-get autoremove -y 2>/dev/null || true
+
+            # Instala Docker se não existir
+            if ! command -v docker &> /dev/null; then
+              sudo apt-get update -qq
+              sudo apt-get install -y docker.io
+              sudo systemctl enable --now docker
+            fi
+
+            sudo docker stop flowlog-app 2>/dev/null || true
+            sudo docker rm   flowlog-app 2>/dev/null || true
+
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
-         
-            echo "Iniciando container..."
+
             sudo docker run -d \
               --name flowlog-app \
               --restart always \
               -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
-      
-            echo "Container iniciado com sucesso!"
-            sudo docker ps --filter name=flowlog-app --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+            echo " Produção no ar!"
+            sudo docker ps --filter name=flowlog-app \
+              --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           REMOTE
 
-  health-check:
-    name: Health Check
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: ⏳ Aguardar serviço inicializar
-        run: sleep 15
-
-      - name: Verificar one-page no ar (HTTP 200)
+      - name:  Health Check Produção
         run: |
+          sleep 15
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            http://${{ secrets.AWS_EC2_HOST }}/ \
-            --max-time 30 \
-            --retry 5 \
-            --retry-delay 5)
-
-          echo "Status HTTP recebido: $STATUS"
-
-          if [ "$STATUS" -eq 200 ]; then
-            echo "One-page FlowLog está NO AR! Status: $STATUS"
-          else
-            echo "Falha no health-check. Status: $STATUS"
-            exit 1
-          fi
-
-      - name: Verificar endpoint /health
-        run: |
-          RESPONSE=$(curl -s http://${{ secrets.AWS_EC2_HOST }}/health --max-time 10)
-          echo "📋 Resposta do /health: $RESPONSE"
-          if echo "$RESPONSE" | grep -q '"status":"ok"'; then
-            echo "Health endpoint OK!"
-          else
-            echo " Health endpoint retornou resposta inesperada"
-          fi
-
+            http://${{ secrets.AWS_EC2_HOST_PROD }}/ \
+            --max-time 30 --retry 5 --retry-delay 5)
+          echo "🔎 Status: $STATUS"
+          [ "$STATUS" -eq 200 ] && echo " Produção OK!" || (echo "Falha!" && exit 1)
