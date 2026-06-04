@@ -104,13 +104,13 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
           chmod 600 ~/.ssh/ec2_key.pem
-          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST_HOMOLOG }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name:  Deploy na EC2 Homologação
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
-              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST_HOMOLOG }} << 'REMOTE'
+              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'REMOTE'
             echo "═══════════════════════════════════════"
             echo "  FlowLog · Deploy HOMOLOGAÇÃO"
             echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
@@ -147,7 +147,7 @@ jobs:
         run: |
           sleep 10
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            http://${{ secrets.AWS_EC2_HOST_HOMOLOG }}/ \
+            http://${{ secrets.AWS_EC2_HOST}}/ \
             --max-time 30 --retry 3 --retry-delay 5)
           echo "🔎 Status: $STATUS"
           [ "$STATUS" -eq 200 ] && echo " Homologação OK!" || (echo " Falha!" && exit 1)
@@ -167,13 +167,13 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
           chmod 600 ~/.ssh/ec2_key.pem
-          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST_PROD }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.AWS_EC2_HOST}} >> ~/.ssh/known_hosts
 
       - name:  Deploy na EC2 Produção
         run: |
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
-              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST_PROD }} << 'REMOTE'
+              ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2}} << 'REMOTE'
             echo "═══════════════════════════════════════"
             echo "  FlowLog · Deploy PRODUÇÃO"
             echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
@@ -210,7 +210,7 @@ jobs:
         run: |
           sleep 15
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            http://${{ secrets.AWS_EC2_HOST_PROD }}/ \
+            http://${{ secrets.AWS_EC2_HOST }}/ \
             --max-time 30 --retry 5 --retry-delay 5)
           echo "🔎 Status: $STATUS"
           [ "$STATUS" -eq 200 ] && echo " Produção OK!" || (echo "Falha!" && exit 1)
