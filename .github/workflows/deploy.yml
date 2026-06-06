@@ -30,7 +30,6 @@ jobs:
 
       - name:  Lint HTML
         run: |
-          echo "── Verificando estrutura do HTML ──"
           if grep -q '<!DOCTYPE html>' index.html; then
             echo "DOCTYPE encontrado"
           else
@@ -42,13 +41,6 @@ jobs:
             echo "Tag <title> ausente" && exit 1
           fi
           echo "Lint concluído com sucesso"
-
-      - name: Info do commit
-        run: |
-          echo " Commit  : ${{ github.sha }}"
-          echo " Autor   : ${{ github.actor }}"
-          echo " Branch  : ${{ github.ref_name }}"
-          echo " Mensagem: ${{ github.event.head_commit.message }}"
 
   docker:
     name:  Docker Build & Push
@@ -111,10 +103,6 @@ jobs:
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
               ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST }} << 'REMOTE'
-            echo "═══════════════════════════════════════"
-            echo "  FlowLog · Deploy HOMOLOGAÇÃO"
-            echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
-            echo "═══════════════════════════════════════"
 
             # Remove Nginx do sistema se existir
             sudo apt-get remove -y nginx nginx-common 2>/dev/null || true
@@ -138,7 +126,6 @@ jobs:
               -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:homolog
 
-            echo " Homologação no ar!"
             sudo docker ps --filter name=flowlog-app \
               --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           REMOTE
@@ -149,7 +136,7 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             http://${{ secrets.AWS_EC2_HOST}}/ \
             --max-time 30 --retry 3 --retry-delay 5)
-          echo "🔎 Status: $STATUS"
+          echo "Status: $STATUS"
           [ "$STATUS" -eq 200 ] && echo " Homologação OK!" || (echo " Falha!" && exit 1)
 
 
@@ -174,10 +161,6 @@ jobs:
           ssh -i ~/.ssh/ec2_key.pem \
               -o StrictHostKeyChecking=no \
               ${{ secrets.AWS_EC2_USER }}@${{ secrets.AWS_EC2_HOST}} << 'REMOTE'
-            echo "═══════════════════════════════════════"
-            echo "  FlowLog · Deploy PRODUÇÃO"
-            echo "  Data : $(date '+%d/%m/%Y %H:%M:%S')"
-            echo "═══════════════════════════════════════"
 
             # Remove Nginx do sistema se existir
             sudo apt-get remove -y nginx nginx-common 2>/dev/null || true
@@ -201,7 +184,6 @@ jobs:
               -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/flowlog-onepage:latest
 
-            echo " Produção no ar!"
             sudo docker ps --filter name=flowlog-app \
               --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           REMOTE
@@ -212,5 +194,5 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             http://${{ secrets.AWS_EC2_HOST }}/ \
             --max-time 30 --retry 5 --retry-delay 5)
-          echo "🔎 Status: $STATUS"
+          echo " Status: $STATUS"
           [ "$STATUS" -eq 200 ] && echo " Produção OK!" || (echo "Falha!" && exit 1)
